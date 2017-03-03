@@ -1,0 +1,146 @@
+function RemWallpaper {
+	$InstallFolder = "${env:ProgramFiles}\XXX"
+	$WPLocation = "${InstallFolder}\wallpaper"
+	$WPSource = "\\XXX\scripts\files\wallpaper201408"
+	$WPTouch = "${WPLocation}\touch.ts"
+	$OldICT = "${env:SystemDrive}\XXX"
+	$OldWPLocation = "${OldICT}\wallpaper"
+	
+	$PRGfolderexists = (Test-Path $InstallFolder -PathType Container)
+	$WPLfolderexists = (Test-Path $WPLocation -PathType Container)	#Check existence of the local WallPaper Location.
+	$WPSfolderexists = (Test-Path $WPSource -PathType Container)	#Check existence of WallPaper Source Folder
+	$OldICTfolderexists = (Test-Path $OldICT -PathType Container) #Check existence of old SHunsleyICT folder
+	$OldWPfolderexists = (Test-Path $OldWPLocation -PathType Container) #Check existence of old wallpaper folder
+	
+	#If the source folder cannot be found on the network, we are unable to remediate, so we need to report that
+	#remediation has failed
+	If (!($WPSfolderexists)) { 
+		write-host "ERROR: The source folder, $WPSource does not exist"
+		Return 1 
+	} else {
+		$WPSourceDate = (Get-ItemProperty -Path $WPSource).LastWriteTime
+			#^Get the Last Write Time attribute from the source folder.
+	}
+	
+	
+	write-host "Re-synchronising..."
+	#Check existance of South Hunsley Program Files folder
+	If (!($PRGfolderexists)) {
+		write-host "Creating $InstallFolder"
+		#South Hunsley Program Files folder does not exist. Create it.
+		try {
+			New-Item -ItemType directory -Path $InstallFolder -ea stop
+		} catch {
+			Write-Host "Exception: $_"
+			Return 2
+		}
+		#Set permissions on South Hunsley Program Files folder
+		try {
+			$Acl = Get-Acl $InstallFolder
+			$Acl.SetAccessRuleProtection($True, $False)
+			$Ar = New-Object system.Security.AccessControl.FileSystemAccessRule("Authenticated Users","ReadAndExecute","Allow")
+			$Acl.AddAccessRule($Ar)
+			$Ar = New-Object system.Security.AccessControl.FileSystemAccessRule("Administrators","FullControl","ContainerInherit,ObjectInherit","None","Allow")
+			$Acl.AddAccessRule($Ar)
+			$Ar = New-Object system.Security.AccessControl.FileSystemAccessRule("IT Crew","FullControl","ContainerInherit,ObjectInherit","None","Allow")
+			$Acl.AddAccessRule($Ar)
+			$Ar = New-Object system.Security.AccessControl.FileSystemAccessRule("Creator Owner","FullControl","Allow")
+			$Acl.AddAccessRule($Ar)
+			$Ar = New-Object system.Security.AccessControl.FileSystemAccessRule("SYSTEM","FullControl","ContainerInherit,ObjectInherit","None","Allow")
+			$Acl.AddAccessRule($Ar)
+			Set-Acl $InstallFolder $Acl
+		} catch {
+			Write-Host "Exception: $_"
+			Return 8
+		}
+		
+	} elseif ($WPLfolderexists) {
+	write-host "Deleteing existing wallpaper..."
+		#South Hunsley Program Files folder exists, and so does the local wallpaper folder.
+		#As we are re-synchronising,delete the wallpaper folder.
+		try {
+			Remove-Item -Path $WPLocation -Recurse -force -ea stop
+		} catch {
+			Write-Host "Exception: $_"
+			Return 3
+		}
+	}
+
+	#Existence of the Old ICT folder probably means this is a pre MDT 2013 image. We should copy the image.txt from c:\shunsleyict and create a place holder if it doesn't exist refresh.txt
+	If ($OldICTfolderexists) {
+		try {
+            If (!(Test-Path -Path "${InstallFolder}\image.txt")) {
+			    Copy-Item -Path "${OldICT}\image.txt" -Destination "${InstallFolder}\image.txt" -Force
+			    $Acl = Get-Acl "${InstallFolder}\image.txt"
+			    $Ar = New-Object System.Security.AccessControl.FileSystemAccessRule("Authenticated Users","ReadAndExecute","Allow")
+			    $Acl.AddAccessRule($Ar)
+			    Set-Acl "${InstallFolder}\image.txt" $Acl
+            }
+            If (!(Test-Path -Path "${InstallFolder}\refresh.txt")) {
+			    New-Item "${InstallFolder}\refresh.txt" -ItemType File -Force
+			    Add-Content "${InstallFolder}\refresh.txt" -Value "Pre MDT 2013 Image"
+			    $Acl = Get-Acl "${InstallFolder}\refresh.txt"
+			    $Ar = New-Object System.Security.AccessControl.FileSystemAccessRule("Authenticated Users","ReadAndExecute","Allow")
+			    $Acl.AddAccessRule($Ar)
+			    Set-Acl "${InstallFolder}\refresh.txt" $Acl
+            }
+		} catch {
+			Write-Host "Exception: $_"
+		Return 9
+		}
+	}
+	
+	#Copy the source folder to the local disk
+	write-host "Copy wallpaper to disk..."
+	Try {
+		Copy-Item -Path $WPSource -Destination $WPLocation\ -Recurse -ea stop
+	} catch {
+		Write-Host "Exception: $_"
+		Return 4
+	}
+	
+	#Create the touch file
+	write-host "Create touch file..."
+	Try {
+		New-Item -ItemType File -Path $WPTouch -ea stop
+	} catch {
+		Write-Host "Exception: $_"
+		Return 5
+	}
+	
+	#Modify touch file's LastWriteTime attribute
+	write-host "Modify touch file date..."
+	
+	try {
+		Set-ItemProperty -Path $WPTouch -Name LastWriteTime -Value (get-date $WPSourceDate) -ea stop
+	} catch {
+		Write-Host "Exception: $_"
+		Return 6
+	}
+	
+	#Set wallpaper folder permissions
+	$Acl = Get-Acl $WPLocation
+	try {		
+		$Ar = New-Object system.Security.AccessControl.FileSystemAccessRule("Authenticated Users","ReadAndExecute","ContainerInherit,ObjectInherit","None","Allow")
+	} catch { 
+		Write-Host "Exception: $_"
+		Return 7
+	}
+	$Acl.AddAccessRule($Ar)
+	Set-Acl $WPLocation $Acl
+	
+	If ($OldWPfolderexists) {
+		try {
+			Remove-Item -Path $OldWPLocation -Recurse -Force
+		} catch {
+			Write-Host "Exception: $_"
+			Return 10
+		}
+	}
+		
+	Return 0
+}
+"begin"
+$Result = RemWallpaper
+"end"
+Exit $Result
