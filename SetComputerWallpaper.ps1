@@ -1,5 +1,5 @@
 #UPDATE THE CORPORATE DESKTOP IMAGES
-$InstallFolder = "${env:ProgramFiles}\South Hunsley School"
+$InstallFolder = "${env:ProgramFiles}\Organisation Name"
 $WPLocation = "${InstallFolder}\wallpaper"
 $WPLfolderexists = (Test-Path $WPLocation -PathType Container)	#Check existence of the local WallPaper Location.
 #EXIT IF THE LOCAL WALLPAPER FOLDER DOES NOT EXIST
